@@ -1,0 +1,6 @@
+package Enums;
+
+public enum LogEventType {
+    SESSION_STARTED, LOGIN_ATTEMPT, LOGIN_SUCCESS, LOGIN_FAILED,
+    LOGOUT, ACTION, SESSION_ENDED, ERROR
+}
