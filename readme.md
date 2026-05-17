@@ -34,12 +34,12 @@ Total: 46 Java source files.
 User (abstract)
  +-- Student          (implements IResearcher)
  +-- Admin
- +-- Signatory (abstract)
- |    +-- Dean
- |    +-- Rector
  +-- Employee         (implements IResearcher)
       +-- Teacher
       +-- Manager
+      +-- Signatory (abstract)
+      |    +-- Dean
+      |    +-- Rector
 ```
 
 `IResearcher` is a mixin interface implemented independently by `Student` and `Employee`. This allows both hierarchies to publish papers and join research projects without forcing a common superclass.
