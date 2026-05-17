@@ -1,6 +1,6 @@
 package Services;
 
-import Assets.Mark;
+import Models.Mark;
 import Exceptions.TooManyFailsException;
 
 import java.io.File;
@@ -18,6 +18,9 @@ import java.util.Map;
 public class MarkService implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final String DATA_FILE = "data/marks.dat";
+
+    /** Must match Student.MAX_FAILS — the domain rule is 3 course failures maximum. */
+    private static final int MAX_COURSE_FAILURES = 3;
 
     private Map<String, Mark> marks;
     private Map<String, Integer> failCounts;
@@ -55,11 +58,11 @@ public class MarkService implements Serializable {
         boolean wasFailed = existing != null && !existing.isPassed();
         boolean isFailed = !mark.isPassed();
         if (!wasFailed && isFailed) {
-            int fails = failCounts.merge(studentUsername, 1, Integer::sum);
-            if (fails > 3) {
-                throw new TooManyFailsException(
-                        studentUsername + " has exceeded the maximum of 3 course failures");
+            int fails = failCounts.getOrDefault(studentUsername, 0) + 1;
+            if (fails > MAX_COURSE_FAILURES) {
+                throw new TooManyFailsException(studentUsername, fails, MAX_COURSE_FAILURES);
             }
+            failCounts.put(studentUsername, fails);
         }
 
         marks.put(key, mark);
@@ -98,6 +101,7 @@ public class MarkService implements Serializable {
         if (total >= 80) return 3.0;
         if (total >= 70) return 2.0;
         if (total >= 60) return 1.0;
+        if (total >= 50) return 1.0; // D — passed but below average
         return 0.0;
     }
 

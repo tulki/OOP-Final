@@ -1,20 +1,39 @@
 package Actors;
 
-import Assets.Course;
-import Assets.Mark;
-import Assets.ResearchPaper;
-import Assets.ResearchProfile;
-import Assets.ResearchProject;
+import Models.Course;
+import Models.Mark;
+import Models.ResearchProfile;
+import Enums.LogEventType;
+import Enums.School;
 import Enums.TeacherTitle;
 import Services.Services;
 
-import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
 
+/**
+ * Represents a teaching staff member of the university.
+ *
+ * <p>Teachers hold one of four academic titles defined by
+ * {@link Enums.TeacherTitle}: {@code TUTOR}, {@code LECTOR},
+ * {@code SENIOR_LECTOR}, or {@code PROFESSOR}. Professors are
+ * automatically activated as researchers upon creation; other titles
+ * can opt in by updating their {@link Models.ResearchProfile}.
+ *
+ * <p>Core responsibilities:
+ * <ul>
+ *   <li>Managing assigned courses and recording student marks
+ *       (ATT1 0–30, ATT2 0–30, Final 0–40).</li>
+ *   <li>Viewing per-course statistics (average total, pass rate).</li>
+ *   <li>Research activities: publishing papers (with co-author linking),
+ *       creating and joining {@link Models.ResearchProject}s,
+ *       updating h-index and school.</li>
+ * </ul>
+ *
+ * <p>Teacher rating is accumulated from student votes (1–5 scale) and
+ * exposed as a running average via {@link #getRating()}.
+ */
 public class Teacher extends Employee {
     private static final long serialVersionUID = 1L;
 
@@ -24,16 +43,16 @@ public class Teacher extends Employee {
     private int ratingCount;
 
     public Teacher(String username, String passwordHash, String fullName,
-                   String department, TeacherTitle title) {
-        super(username, passwordHash, fullName, department);
+                   School school, TeacherTitle title) {
+        super(username, passwordHash, fullName, school);
         this.title = title;
         this.courses = new ArrayList<>();
-        if (isProfessor()) setResearchProfile(new ResearchProfile(0, department));
+        if (isProfessor()) setResearchProfile(new ResearchProfile(0, school.getDisplayName()));
     }
 
-    public TeacherTitle getTitle()  { return title; }
+    public TeacherTitle getTitle() { return title; }
     public List<Course> getCourses() { return courses; }
-    public boolean isProfessor()    { return title == TeacherTitle.PROFESSOR; }
+    public boolean isProfessor() { return title == TeacherTitle.PROFESSOR; }
 
     public double getRating() {
         return ratingCount == 0 ? 0.0 : ratingSum / ratingCount;
@@ -57,9 +76,8 @@ public class Teacher extends Employee {
         System.out.println("  1  - Manage my courses");
         System.out.println("  2  - Send complaint");
         System.out.println("  3  - Manage my requests");
-        System.out.println("  4  - Write recommendation letter");
         if (isResearcher())
-            System.out.println("  5  - Research block");
+            System.out.println("  4  - Research block");
     }
 
     @Override
@@ -68,9 +86,8 @@ public class Teacher extends Employee {
             case "1" -> manageMyCourses(in, services);
             case "2" -> sendComplaint(in, services);
             case "3" -> manageOwnRequests(in, services);
-            case "4" -> writeRecommendationLetter(in, services);
-            case "5" -> { if (isResearcher()) manageResearch(in, services); else return false; }
-            default  -> { return false; }
+            case "4" -> { if (isResearcher()) manageResearch(in, services); else return false; }
+            default ->{ return false; }
         }
         return true;
     }
@@ -104,48 +121,6 @@ public class Teacher extends Employee {
         }
     }
 
-    private void writeRecommendationLetter(Scanner in, Services services) {
-        System.out.print("Student username: ");
-        String studentUsername = in.nextLine().trim();
-        User user = services.getUserRepository().findByUsername(studentUsername).orElse(null);
-        if (!(user instanceof Student student) || !teachesStudent(student, services)) {
-            System.out.println("Student is not enrolled in your courses.");
-            return;
-        }
-
-        System.out.println("Letter body:");
-        String body = in.nextLine();
-        System.out.println("\n=== Recommendation letter ===");
-        System.out.println("Teacher: " + getFullName());
-        System.out.println("Student: " + student.getFullName());
-        System.out.println(body);
-    }
-
-    private void manageResearch(Scanner in, Services services) {
-        while (true) {
-            System.out.println("\n=== Research ===");
-            System.out.println("  l - List my papers");
-            System.out.println("  p - Publish paper");
-            System.out.println("  c - Create project");
-            System.out.println("  j - Join project");
-            System.out.println("  v - View projects");
-            System.out.println("  h - Update h-index/school");
-            System.out.println("  b - Back");
-            System.out.print("> ");
-
-            String choice = in.nextLine().trim().toLowerCase();
-            switch (choice) {
-                case "l" -> printOwnPapers(in);
-                case "p" -> publishPaper(in, services);
-                case "c" -> createProject(in, services);
-                case "j" -> joinProject(in, services);
-                case "v" -> services.getResearchService().getAllProjects().forEach(System.out::println);
-                case "h" -> updateResearchProfile(in, services);
-                case "b" -> { return; }
-                default -> System.out.println("Unknown option.");
-            }
-        }
-    }
 
     private void printStudentsForCourse(Course course, Services services) {
         List<Student> students = studentsForCourse(course, services);
@@ -158,10 +133,21 @@ public class Teacher extends Employee {
     }
 
     private void manageMarks(Course course, Scanner in, Services services) {
+        List<Student> enrolled = studentsForCourse(course, services);
+        if (enrolled.isEmpty()) {
+            System.out.println("No students enrolled in this course.");
+            return;
+        }
         printStudentsForCourse(course, services);
         try {
             System.out.print("Student username: ");
             String studentUsername = in.nextLine().trim();
+            boolean isEnrolled = enrolled.stream()
+                    .anyMatch(s -> s.getUsername().equalsIgnoreCase(studentUsername));
+            if (!isEnrolled) {
+                System.out.println("Student is not enrolled in this course.");
+                return;
+            }
             System.out.print("First attestation (0-30): ");
             double first = Double.parseDouble(in.nextLine().trim());
             System.out.print("Second attestation (0-30): ");
@@ -171,6 +157,10 @@ public class Teacher extends Employee {
 
             services.getMarkService().setMark(studentUsername, course.getCourseId(),
                     new Mark(first, second, finalExam));
+            services.getLogger().log(LogEventType.ACTION,
+                    "teacher " + getUsername() + " set mark for " + studentUsername
+                            + " in " + course.getCourseId()
+                            + " [ATT1=" + first + " ATT2=" + second + " Final=" + finalExam + "]");
             services.saveAll();
             System.out.println("Mark saved.");
         } catch (RuntimeException e) {
@@ -202,89 +192,6 @@ public class Teacher extends Employee {
                 total / count, passed * 100.0 / count);
     }
 
-    private void printOwnPapers(Scanner in) {
-        System.out.println("Sort by: 1=citations, 2=date, 3=pages");
-        String choice = in.nextLine().trim();
-        Comparator<ResearchPaper> comparator = switch (choice) {
-            case "2" -> Comparator.comparing(ResearchPaper::getDatePublished,
-                    Comparator.nullsLast(Comparator.naturalOrder()));
-            case "3" -> Comparator.comparingInt(ResearchPaper::getPages).reversed();
-            default -> Comparator.comparingInt(ResearchPaper::getCitations).reversed();
-        };
-        printPapers(comparator);
-    }
-
-    private void publishPaper(Scanner in, Services services) {
-        try {
-            System.out.print("Title: ");
-            String title = in.nextLine().trim();
-            System.out.print("Authors (comma-separated): ");
-            List<String> authors = Arrays.stream(in.nextLine().split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isBlank())
-                    .toList();
-            System.out.print("Journal: ");
-            String journal = in.nextLine().trim();
-            System.out.print("Pages: ");
-            int pages = Integer.parseInt(in.nextLine().trim());
-            System.out.print("Date published (YYYY-MM-DD): ");
-            LocalDate date = LocalDate.parse(in.nextLine().trim());
-            System.out.print("DOI: ");
-            String doi = in.nextLine().trim();
-            System.out.print("Citations: ");
-            int citations = Integer.parseInt(in.nextLine().trim());
-            System.out.print("Field: ");
-            String field = in.nextLine().trim();
-
-            addResearchPaper(new ResearchPaper(title, authors, journal, pages, date, doi, citations, field));
-            services.saveAll();
-            System.out.println("Paper published.");
-        } catch (RuntimeException e) {
-            System.out.println("Could not publish paper: " + e.getMessage());
-        }
-    }
-
-    private void createProject(Scanner in, Services services) {
-        try {
-            System.out.print("Project ID: ");
-            String id = in.nextLine().trim();
-            System.out.print("Topic: ");
-            ResearchProject project = new ResearchProject(id, in.nextLine().trim());
-            services.getResearchService().addProject(project);
-            services.getResearchService().joinProject(id, getUsername());
-            services.saveAll();
-            System.out.println("Project created.");
-        } catch (RuntimeException e) {
-            System.out.println("Could not create project: " + e.getMessage());
-        }
-    }
-
-    private void joinProject(Scanner in, Services services) {
-        services.getResearchService().getAllProjects().forEach(System.out::println);
-        try {
-            System.out.print("Project ID: ");
-            services.getResearchService().joinProject(in.nextLine().trim(), getUsername());
-            services.saveAll();
-            System.out.println("Joined project.");
-        } catch (RuntimeException e) {
-            System.out.println("Could not join project: " + e.getMessage());
-        }
-    }
-
-    private void updateResearchProfile(Scanner in, Services services) {
-        if (!isResearcher()) setResearchProfile(new ResearchProfile(0, getDepartment()));
-        try {
-            System.out.print("h-index: ");
-            getResearchProfile().setHIndex(Integer.parseInt(in.nextLine().trim()));
-            System.out.print("School: ");
-            getResearchProfile().setSchool(in.nextLine().trim());
-            services.saveAll();
-            System.out.println("Research profile updated.");
-        } catch (RuntimeException e) {
-            System.out.println("Could not update profile: " + e.getMessage());
-        }
-    }
-
     private List<Course> canonicalCourses(Services services) {
         List<Course> result = new ArrayList<>();
         for (Course course : courses) {
@@ -302,24 +209,4 @@ public class Teacher extends Employee {
                 .toList();
     }
 
-    private boolean teachesStudent(Student student, Services services) {
-        for (Course teacherCourse : canonicalCourses(services)) {
-            if (student.getCourses().contains(teacherCourse)) return true;
-        }
-        return false;
-    }
-
-    private int readIndex(Scanner in, int size) {
-        try {
-            int index = Integer.parseInt(in.nextLine().trim()) - 1;
-            if (index < 0 || index >= size) {
-                System.out.println("Invalid number.");
-                return -1;
-            }
-            return index;
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid number.");
-            return -1;
-        }
-    }
 }

@@ -17,10 +17,7 @@ public class Session {
 
     public void run() {
         Logger log = services.getLogger();
-        log.log(LogEventType.SESSION_STARTED, "Application started");
-        System.out.println("==========================================");
-        System.out.println("  Research-Oriented University System");
-        System.out.println("==========================================");
+        log.log(LogEventType.SESSION_STARTED, "Session started");
 
         User user = authenticate(log);
         if (user == null) {
@@ -30,7 +27,7 @@ public class Session {
         }
 
         log.log(LogEventType.LOGIN_SUCCESS, "user=" + user.getUsername());
-        System.out.println("\nWelcome, " + user.getFullName() + "!\n");
+        System.out.println("\nWelcome, " + user.getFullName() + "!");
         user.showMenu(scanner, services);
 
         log.log(LogEventType.LOGOUT, "user=" + user.getUsername());

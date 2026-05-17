@@ -3,7 +3,7 @@ package Services;
 import Actors.Student;
 import Actors.Teacher;
 import Actors.User;
-import Assets.Course;
+import Models.Course;
 import Enums.CourseStatus;
 import Exceptions.CreditLimitExceededException;
 
@@ -70,12 +70,12 @@ public class CourseService implements Serializable {
 
     public List<Course> getAllCourses() { return new ArrayList<>(courses); }
 
-    public List<Course> getCoursesForMajorAndYear(String major, int year) {
+    public List<Course> getCoursesForMajorAndYear(Enums.Major major, Enums.YearLevel year) {
         List<Course> result = new ArrayList<>();
         for (Course c : courses) {
             if (c.getStatus() == CourseStatus.OPEN
-                    && c.getMajor().equalsIgnoreCase(major)
-                    && c.getYearLevel() == year) {
+                    && c.getMajors().contains(major)
+                    && c.getYearLevels().contains(year)) {
                 result.add(c);
             }
         }
@@ -101,8 +101,17 @@ public class CourseService implements Serializable {
         if (isRegistrationPending(studentUsername, courseId)) {
             throw new IllegalStateException("Registration request is already pending");
         }
-        if (student.getEnrolledCredits() + course.getCredits() > Student.MAX_CREDITS) {
-            throw new CreditLimitExceededException("Registration would exceed the 21-credit limit");
+        int pendingCredits = 0;
+        for (String[] pending : pendingRegistrations) {
+            if (pending[0].equalsIgnoreCase(studentUsername)) {
+                Course pendingCourse = findById(pending[1]);
+                if (pendingCourse != null) pendingCredits += pendingCourse.getCredits();
+            }
+        }
+        if (student.getEnrolledCredits() + pendingCredits + course.getCredits() > Student.MAX_CREDITS) {
+            throw new CreditLimitExceededException(
+                    course.getName(), course.getCredits(),
+                    student.getEnrolledCredits() + pendingCredits, Student.MAX_CREDITS);
         }
 
         pendingRegistrations.add(new String[]{studentUsername, courseId});
@@ -135,6 +144,16 @@ public class CourseService implements Serializable {
     }
 
     public List<String[]> getPendingRegistrations() { return new ArrayList<>(pendingRegistrations); }
+
+    public void removePendingFor(String username) {
+        pendingRegistrations.removeIf(r -> r[0].equalsIgnoreCase(username));
+    }
+
+    public void removeInstructorFor(String username) {
+        for (Course course : courses) {
+            course.getInstructorUsernames().removeIf(u -> u.equalsIgnoreCase(username));
+        }
+    }
 
     private boolean isRegistrationPending(String studentUsername, String courseId) {
         for (String[] request : pendingRegistrations) {
@@ -179,3 +198,4 @@ public class CourseService implements Serializable {
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + username));
     }
 }
+

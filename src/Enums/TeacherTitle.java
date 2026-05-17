@@ -1,5 +1,5 @@
 package Enums;
 
 public enum TeacherTitle {
-    TUTOR, SENIOR_LECTOR, PROFESSOR
+    TUTOR, LECTOR, SENIOR_LECTOR, PROFESSOR
 }

@@ -1,6 +1,6 @@
 package Services;
 
-import Assets.News;
+import Models.News;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -68,3 +68,4 @@ public class NewsService implements Serializable {
 
     public List<News> getAll() { return new ArrayList<>(newsList); }
 }
+

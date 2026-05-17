@@ -1,9 +1,12 @@
 package Actors;
 
-import Assets.Course;
-import Assets.Lesson;
-import Assets.Mark;
-import Assets.ResearchProfile;
+import Models.Course;
+import Models.Lesson;
+import Models.Mark;
+import Models.ResearchProfile;
+import Enums.LogEventType;
+import Enums.Major;
+import Enums.YearLevel;
 import Exceptions.CreditLimitExceededException;
 import Exceptions.LowHIndexException;
 import Exceptions.NotAResearcherException;
@@ -21,34 +24,32 @@ import java.util.Set;
 public class Student extends User implements IResearcher {
     private static final long serialVersionUID = 1L;
 
-    public static final int MAX_CREDITS      = 21;
-    public static final int MAX_FAILS        = 3;
-    public static final int SUPERVISOR_YEAR  = 4;
-    public static final int MIN_H_INDEX      = 3;
+    public static final int MAX_CREDITS = 21;
+    public static final int MAX_FAILS = 3;
+    public static final int MIN_H_INDEX = 3;
 
-    private String major;
-    private int year;
+    private Major major;
+    private YearLevel year;
     private int enrolledCredits;
-    private int failCount;
     private List<Course> courses;
+    private Set<String> ratedTeachers;
     private ResearchProfile researchProfile;
     private IResearcher researchSupervisor;
 
     public Student(String username, String passwordHash, String fullName,
-                   String major, int year) {
+                   Major major, YearLevel year) {
         super(username, passwordHash, fullName);
         this.major = major;
-        this.year  = year;
+        this.year = year;
         this.enrolledCredits = 0;
-        this.failCount = 0;
         this.courses = new ArrayList<>();
+        this.ratedTeachers = new LinkedHashSet<>();
     }
 
-    public String getMajor()            { return major; }
-    public int getYear()                { return year; }
-    public int getEnrolledCredits()     { return enrolledCredits; }
-    public int getFailCount()           { return failCount; }
-    public List<Course> getCourses()    { return courses; }
+    public Major getMajor() { return major; }
+    public YearLevel getYear() { return year; }
+    public int getEnrolledCredits() { return enrolledCredits; }
+    public List<Course> getCourses() { return courses; }
     public IResearcher getResearchSupervisor() { return researchSupervisor; }
 
     @Override
@@ -62,8 +63,7 @@ public class Student extends User implements IResearcher {
     public void addCourse(Course course) {
         if (enrolledCredits + course.getCredits() > MAX_CREDITS)
             throw new CreditLimitExceededException(
-                    "Adding '" + course.getName() + "' (" + course.getCredits()
-                    + " cr) would exceed the " + MAX_CREDITS + "-credit limit");
+                    course.getName(), course.getCredits(), enrolledCredits, MAX_CREDITS);
         if (!courses.contains(course)) {
             courses.add(course);
             enrolledCredits += course.getCredits();
@@ -74,17 +74,15 @@ public class Student extends User implements IResearcher {
         if (courses.remove(course)) enrolledCredits -= course.getCredits();
     }
 
-    public void recordFail() { failCount++; }
-
     public void assignResearchSupervisor(IResearcher supervisor) {
-        if (year != SUPERVISOR_YEAR)
-            throw new IllegalStateException("Only 4th-year students can choose a research supervisor");
-        if (supervisor == null || !supervisor.isResearcher())
-            throw new NotAResearcherException("Supervisor must be an active researcher");
+        if (year != YearLevel.YEAR_4)
+            throw new IllegalStateException("Only 4th-year students can choose a research supervisor.");
+        if (supervisor == null || !supervisor.isResearcher()) {
+            String name = (supervisor instanceof User u) ? u.getUsername() : "unknown";
+            throw new NotAResearcherException(name);
+        }
         if (supervisor.getHIndex() < MIN_H_INDEX)
-            throw new LowHIndexException(
-                    "Supervisor h-index " + supervisor.getHIndex()
-                    + " is below required minimum of " + MIN_H_INDEX);
+            throw new LowHIndexException(supervisor.getHIndex(), MIN_H_INDEX);
         this.researchSupervisor = supervisor;
     }
 
@@ -97,8 +95,10 @@ public class Student extends User implements IResearcher {
         System.out.println("  4  - View transcript");
         System.out.println("  5  - Rate a teacher");
         System.out.println("  6  - View schedule");
-        if (year == SUPERVISOR_YEAR)
+        if (year == YearLevel.YEAR_4)
             System.out.println("  7  - Choose research supervisor");
+        if (isResearcher())
+            System.out.println("  8  - Research block");
     }
 
     @Override
@@ -110,9 +110,10 @@ public class Student extends User implements IResearcher {
             case "4" -> viewTranscript(services);
             case "5" -> rateTeacher(in, services);
             case "6" -> viewSchedule(services);
-            case "7" -> { if (year == SUPERVISOR_YEAR) chooseSupervisor(in, services);
+            case "7" -> { if (year == YearLevel.YEAR_4) chooseSupervisor(in, services);
                           else return false; }
-            default  -> { return false; }
+            case "8" -> { if (isResearcher()) manageResearch(in, services); else return false; }
+            default ->{ return false; }
         }
         return true;
     }
@@ -123,10 +124,17 @@ public class Student extends User implements IResearcher {
             System.out.println("No open courses found for " + major + ", year " + year + ".");
             return;
         }
-        available.forEach(c -> System.out.println("  " + c));
-        System.out.print("Course ID: ");
+        for (int i = 0; i < available.size(); i++) {
+            System.out.printf("  %d. %s%n", i + 1, available.get(i));
+        }
+        System.out.print("Course number: ");
+        int index = readIndex(in, available.size());
+        if (index < 0) return;
         try {
-            services.getCourseService().requestRegistration(getUsername(), in.nextLine().trim());
+            String courseId = available.get(index).getCourseId();
+            services.getCourseService().requestRegistration(getUsername(), courseId);
+            services.getLogger().log(LogEventType.ACTION,
+                    "student " + getUsername() + " submitted registration request for course " + courseId);
             services.saveAll();
         } catch (RuntimeException e) {
             System.out.println("Could not request registration: " + e.getMessage());
@@ -198,8 +206,13 @@ public class Student extends User implements IResearcher {
                 System.out.println("Teacher not found among your courses.");
                 return;
             }
+            if (ratedTeachers.contains(username)) {
+                System.out.println("You have already rated this teacher.");
+                return;
+            }
             System.out.print("Rating (1-5): ");
             teacher.addRating(Integer.parseInt(in.nextLine().trim()));
+            ratedTeachers.add(username);
             services.saveAll();
             System.out.println("Rating saved.");
         } catch (RuntimeException e) {
@@ -219,14 +232,15 @@ public class Student extends User implements IResearcher {
     }
 
     private void chooseSupervisor(Scanner in, Services services) {
-        List<IResearcher> researchers = services.getResearchService().getAllResearchers();
-        if (researchers.isEmpty()) {
-            System.out.println("No researchers found.");
+        List<IResearcher> eligible = services.getResearchService().getAllResearchers().stream()
+                .filter(r -> r != this && r.getHIndex() >= MIN_H_INDEX)
+                .toList();
+        if (eligible.isEmpty()) {
+            System.out.println("No eligible supervisors found (h-index >= " + MIN_H_INDEX + " required).");
             return;
         }
-        for (int i = 0; i < researchers.size(); i++) {
-            IResearcher r = researchers.get(i);
-            if (r == this) continue;
+        for (int i = 0; i < eligible.size(); i++) {
+            IResearcher r = eligible.get(i);
             String label = r instanceof User user
                     ? user.getFullName() + " (" + user.getUsername() + ")"
                     : r.toString();
@@ -235,11 +249,11 @@ public class Student extends User implements IResearcher {
         try {
             System.out.print("Researcher number: ");
             int index = Integer.parseInt(in.nextLine().trim()) - 1;
-            if (index < 0 || index >= researchers.size()) {
+            if (index < 0 || index >= eligible.size()) {
                 System.out.println("Invalid researcher number.");
                 return;
             }
-            assignResearchSupervisor(researchers.get(index));
+            assignResearchSupervisor(eligible.get(index));
             services.saveAll();
             System.out.println("Research supervisor assigned.");
         } catch (RuntimeException e) {
@@ -270,22 +284,16 @@ public class Student extends User implements IResearcher {
         }
     }
 
+    private void readObject(java.io.ObjectInputStream in)
+            throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (courses == null) courses = new ArrayList<>();
+        if (ratedTeachers == null) ratedTeachers = new LinkedHashSet<>();
+    }
+
     private Course canonicalCourse(Course course, Services services) {
         Course current = services.getCourseService().findById(course.getCourseId());
         return current != null ? current : course;
     }
 
-    private int readIndex(Scanner in, int size) {
-        try {
-            int index = Integer.parseInt(in.nextLine().trim()) - 1;
-            if (index < 0 || index >= size) {
-                System.out.println("Invalid number.");
-                return -1;
-            }
-            return index;
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid number.");
-            return -1;
-        }
-    }
 }

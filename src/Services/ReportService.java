@@ -2,7 +2,7 @@ package Services;
 
 import Actors.Student;
 import Actors.User;
-import Assets.Mark;
+import Models.Mark;
 
 import java.io.Serializable;
 import java.util.Comparator;
@@ -33,8 +33,8 @@ public class ReportService implements Serializable {
             return;
         }
 
-        Map<String, Double> gpaByMajor = new HashMap<>();
-        Map<String, Integer> countByMajor = new HashMap<>();
+        Map<Enums.Major, Double> gpaByMajor = new HashMap<>();
+        Map<Enums.Major, Integer> countByMajor = new HashMap<>();
         for (Student student : students) {
             double gpa = markService.getGpa(student.getUsername());
             gpaByMajor.merge(student.getMajor(), gpa, Double::sum);
@@ -43,13 +43,13 @@ public class ReportService implements Serializable {
 
         System.out.println("=== Academic performance report ===");
         for (Student student : students) {
-            System.out.printf("  %s | %s | %s year %d | GPA %.2f | fails %d%n",
+            System.out.printf("  %s | %s | %s %s | GPA %.2f | fails %d%n",
                     student.getUsername(), student.getFullName(), student.getMajor(), student.getYear(),
                     markService.getGpa(student.getUsername()), markService.getFailCount(student.getUsername()));
         }
 
         System.out.println("--- Average GPA by major ---");
-        for (String major : gpaByMajor.keySet()) {
+        for (Enums.Major major : gpaByMajor.keySet()) {
             System.out.printf("  %s: %.2f%n", major, gpaByMajor.get(major) / countByMajor.get(major));
         }
 
@@ -82,3 +82,4 @@ public class ReportService implements Serializable {
         System.out.printf("  GPA: %.2f%n", markService.getGpa(studentUsername));
     }
 }
+

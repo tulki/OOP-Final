@@ -1,8 +1,8 @@
 package Services;
 
 import Actors.User;
-import Assets.ResearchPaper;
-import Assets.ResearchProject;
+import Models.ResearchPaper;
+import Models.ResearchProject;
 import Exceptions.NotAResearcherException;
 import Interfaces.IResearcher;
 
@@ -242,3 +242,4 @@ public class ResearchService implements Serializable {
         return researcher.toString();
     }
 }
+

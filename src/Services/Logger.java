@@ -33,7 +33,6 @@ public class Logger {
     public void log(LogEventType type, String details) {
         String line = String.format("[%s] [%-15s] %s",
                 LocalDateTime.now().format(FMT), type, details);
-        System.out.println(line);
         if (writer != null) writer.println(line);
     }
 
